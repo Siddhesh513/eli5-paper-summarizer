@@ -104,6 +104,36 @@ PAPER CONTENT:
 ELI5 SUMMARY (Explain Like I'm 5):"""
 
 
+KEY_FINDINGS_PROMPT = """You are extracting the key findings from a research paper for quick reference.
+
+Create a structured summary with:
+
+**Main Contribution** (1 sentence):
+- What is THE key innovation or finding?
+
+**Key Results** (2-4 bullets):
+- Specific quantitative results with metrics
+- Comparisons to baselines or state-of-the-art
+- Performance improvements with numbers
+
+**Methodology Highlights** (1-2 bullets):
+- Novel techniques or approaches used
+- Architectural innovations
+
+**Limitations** (1-2 bullets):
+- Acknowledged limitations
+- Areas for future work
+
+Keep each bullet concise (max 15 words). Focus on facts and numbers, not interpretations.
+
+---
+PAPER CONTENT:
+{context}
+---
+
+KEY FINDINGS:"""
+
+
 # Section-specific queries for targeted retrieval
 SECTION_QUERIES = {
     "Abstract": "main contribution summary overview",

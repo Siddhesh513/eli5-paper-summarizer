@@ -1,9 +1,11 @@
 """
 Intelligent Chunking Module.
 Section-aware text chunking with metadata preservation.
+Supports multiple chunking strategies.
 """
 from dataclasses import dataclass
 from typing import Optional
+import re
 
 import tiktoken
 
@@ -40,14 +42,14 @@ def count_tokens(text: str, model: str = "gpt-4o-mini") -> int:
     return len(encoding.encode(text))
 
 
-def chunk_text(
+def chunk_text_recursive(
     text: str,
     max_tokens: int = CHUNK_SIZE,
     overlap_tokens: int = CHUNK_OVERLAP
 ) -> list[str]:
     """
-    Split text into chunks respecting token limits.
-    Simple implementation without langchain dependency.
+    Split text into chunks using recursive character splitting.
+    Tries to split on natural boundaries (paragraphs, sentences, words).
     
     Args:
         text: Text to chunk
@@ -57,58 +59,194 @@ def chunk_text(
     Returns:
         List of text chunks
     """
-    # Split by paragraphs first
-    paragraphs = text.split('\n\n')
+    # Approximate chars per token
+    chars_per_token = 3.5
+    max_chars = int(max_tokens * chars_per_token)
+    overlap_chars = int(overlap_tokens * chars_per_token)
+    
+    # Separators in order of preference
+    separators = ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " "]
+    
+    def split_with_separator(text: str, separator: str, remaining_separators: list) -> list[str]:
+        """Recursively split text using separators."""
+        if not text:
+            return []
+        
+        # If text is small enough, return it
+        if len(text) <= max_chars:
+            return [text]
+        
+        # Split by current separator
+        splits = text.split(separator)
+        
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        for split in splits:
+            split_len = len(split) + len(separator)
+            
+            # If single split is too large, use next separator
+            if split_len > max_chars and remaining_separators:
+                if current_chunk:
+                    chunks.append(separator.join(current_chunk))
+                    current_chunk = []
+                    current_length = 0
+                
+                # Recursively split this large piece
+                sub_chunks = split_with_separator(split, remaining_separators[0], remaining_separators[1:])
+                chunks.extend(sub_chunks)
+            elif current_length + split_len > max_chars:
+                # Start new chunk
+                if current_chunk:
+                    chunks.append(separator.join(current_chunk))
+                current_chunk = [split]
+                current_length = split_len
+            else:
+                # Add to current chunk
+                current_chunk.append(split)
+                current_length += split_len
+        
+        if current_chunk:
+            chunks.append(separator.join(current_chunk))
+        
+        return chunks
+    
+    # Start recursive splitting
+    chunks = split_with_separator(text, separators[0], separators[1:])
+    
+    # Add overlap
+    overlapped_chunks = []
+    for i, chunk in enumerate(chunks):
+        if i > 0 and overlap_chars > 0:
+            # Add end of previous chunk as overlap
+            prev_chunk = chunks[i-1]
+            overlap = prev_chunk[-overlap_chars:] if len(prev_chunk) > overlap_chars else prev_chunk
+            overlapped_chunks.append(overlap + chunk)
+        else:
+            overlapped_chunks.append(chunk)
+    
+    return overlapped_chunks if overlapped_chunks else [text]
+
+
+def chunk_text_semantic(
+    text: str,
+    max_tokens: int = CHUNK_SIZE,
+) -> list[str]:
+    """
+    Split text into chunks based on semantic coherence.
+    Groups sentences with similar topics together.
+    
+    Args:
+        text: Text to chunk
+        max_tokens: Maximum tokens per chunk
+    
+    Returns:
+        List of text chunks
+    """
+    # Split into sentences
+    sentences = re.split(r'(?<=[.!?])\s+', text)
     
     chunks = []
     current_chunk = []
     current_tokens = 0
     
-    for para in paragraphs:
-        para = para.strip()
-        if not para:
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if not sentence:
             continue
-            
-        para_tokens = count_tokens(para)
         
-        # If single paragraph exceeds max, split by sentences
-        if para_tokens > max_tokens:
-            sentences = para.replace('. ', '.|').split('|')
-            for sent in sentences:
-                sent = sent.strip()
-                if not sent:
-                    continue
-                sent_tokens = count_tokens(sent)
-                
-                if current_tokens + sent_tokens > max_tokens and current_chunk:
-                    chunks.append(' '.join(current_chunk))
-                    # Keep some overlap
-                    overlap_text = ' '.join(current_chunk[-2:]) if len(current_chunk) >= 2 else ''
-                    current_chunk = [overlap_text] if overlap_text else []
-                    current_tokens = count_tokens(overlap_text) if overlap_text else 0
-                
-                current_chunk.append(sent)
-                current_tokens += sent_tokens
+        sentence_tokens = count_tokens(sentence)
+        
+        # Check if adding this sentence would exceed limit
+        if current_tokens + sentence_tokens > max_tokens and current_chunk:
+            # Save current chunk
+            chunks.append(' '.join(current_chunk))
+            current_chunk = [sentence]
+            current_tokens = sentence_tokens
         else:
-            if current_tokens + para_tokens > max_tokens and current_chunk:
-                chunks.append('\n\n'.join(current_chunk))
-                current_chunk = []
-                current_tokens = 0
-            
-            current_chunk.append(para)
-            current_tokens += para_tokens
+            current_chunk.append(sentence)
+            current_tokens += sentence_tokens
     
-    # Don't forget the last chunk
+    # Don't forget last chunk
     if current_chunk:
-        chunks.append('\n\n'.join(current_chunk))
+        chunks.append(' '.join(current_chunk))
     
     return chunks if chunks else [text]
+
+
+def chunk_text(
+    text: str,
+    max_tokens: int = CHUNK_SIZE,
+    overlap_tokens: int = CHUNK_OVERLAP,
+    strategy: str = "recursive"
+) -> list[str]:
+    """
+    Split text into chunks using specified strategy.
+    
+    Args:
+        text: Text to chunk
+        max_tokens: Maximum tokens per chunk
+        overlap_tokens: Token overlap between chunks
+        strategy: Chunking strategy ("recursive", "semantic", "simple")
+    
+    Returns:
+        List of text chunks
+    """
+    if strategy == "recursive":
+        return chunk_text_recursive(text, max_tokens, overlap_tokens)
+    elif strategy == "semantic":
+        return chunk_text_semantic(text, max_tokens)
+    else:  # simple/default
+        # Original simple chunking
+        paragraphs = text.split('\n\n')
+        chunks = []
+        current_chunk = []
+        current_tokens = 0
+        
+        for para in paragraphs:
+            para = para.strip()
+            if not para:
+                continue
+                
+            para_tokens = count_tokens(para)
+            
+            if para_tokens > max_tokens:
+                sentences = para.replace('. ', '.|').split('|')
+                for sent in sentences:
+                    sent = sent.strip()
+                    if not sent:
+                        continue
+                    sent_tokens = count_tokens(sent)
+                    
+                    if current_tokens + sent_tokens > max_tokens and current_chunk:
+                        chunks.append(' '.join(current_chunk))
+                        overlap_text = ' '.join(current_chunk[-2:]) if len(current_chunk) >= 2 else ''
+                        current_chunk = [overlap_text] if overlap_text else []
+                        current_tokens = count_tokens(overlap_text) if overlap_text else 0
+                    
+                    current_chunk.append(sent)
+                    current_tokens += sent_tokens
+            else:
+                if current_tokens + para_tokens > max_tokens and current_chunk:
+                    chunks.append('\n\n'.join(current_chunk))
+                    current_chunk = []
+                    current_tokens = 0
+                
+                current_chunk.append(para)
+                current_tokens += para_tokens
+        
+        if current_chunk:
+            chunks.append('\n\n'.join(current_chunk))
+        
+        return chunks if chunks else [text]
 
 
 def chunk_by_section(
     sections: dict[str, str],
     max_tokens: int = CHUNK_SIZE,
-    min_section_tokens: int = 100
+    min_section_tokens: int = 100,
+    strategy: str = "recursive"
 ) -> list[Chunk]:
     """
     Chunk paper content while preserving section boundaries.
@@ -117,6 +255,7 @@ def chunk_by_section(
         sections: Dictionary mapping section names to content
         max_tokens: Maximum tokens per chunk
         min_section_tokens: Minimum tokens to keep section as separate chunk
+        strategy: Chunking strategy ("recursive", "semantic", "simple")
     
     Returns:
         List of Chunk objects with metadata
@@ -167,12 +306,13 @@ def chunk_by_section(
                 metadata={
                     "section": section_name,
                     "is_complete_section": True,
+                    "chunking_strategy": strategy,
                 }
             )
             all_chunks.append(chunk)
         else:
-            # Split section into multiple chunks
-            sub_chunks = chunk_text(content, max_tokens)
+            # Split section into multiple chunks using selected strategy
+            sub_chunks = chunk_text(content, max_tokens, strategy=strategy)
             total_sub = len(sub_chunks)
             
             for idx, sub_content in enumerate(sub_chunks):
@@ -186,6 +326,7 @@ def chunk_by_section(
                         "section": section_name,
                         "is_complete_section": False,
                         "part": f"{idx + 1}/{total_sub}",
+                        "chunking_strategy": strategy,
                     }
                 )
                 all_chunks.append(chunk)

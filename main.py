@@ -34,9 +34,16 @@ def main():
     parser.add_argument(
         "--level",
         type=str,
-        choices=["all", "technical", "simplified", "eli5"],
+        choices=["all", "technical", "simplified", "eli5", "findings"],
         default="all",
         help="Summary level to generate (default: all)",
+    )
+    parser.add_argument(
+        "--chunking",
+        type=str,
+        choices=["recursive", "semantic", "simple"],
+        default="recursive",
+        help="Chunking strategy (default: recursive)",
     )
     parser.add_argument(
         "--verbose",
@@ -84,10 +91,10 @@ def main():
         
         # Step 2: Chunk the paper
         print("\n" + "="*60)
-        print(" ✂️ Chunking Document")
+        print(f" ✂️ Chunking Document ({args.chunking} strategy)")
         print("="*60)
         
-        chunks = chunk_by_section(paper.sections)
+        chunks = chunk_by_section(paper.sections, strategy=args.chunking)
         texts, metadatas = prepare_chunks_for_embedding(chunks)
         
         total_tokens = get_total_tokens(chunks)
@@ -116,6 +123,12 @@ def main():
         result = summarize_paper(all_chunks)
         
         # Step 5: Display results
+        if args.level in ["all", "findings"]:
+            print("\n" + "="*60)
+            print(" ⚡ KEY FINDINGS")
+            print("="*60)
+            print(result.key_findings)
+        
         if args.level in ["all", "technical"]:
             print("\n" + "="*60)
             print(" 📚 TECHNICAL SUMMARY")

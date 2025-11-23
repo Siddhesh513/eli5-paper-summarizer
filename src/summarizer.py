@@ -14,6 +14,7 @@ from src.prompts import (
     TECHNICAL_SUMMARY_PROMPT,
     SIMPLIFIED_SUMMARY_PROMPT,
     ELI5_SUMMARY_PROMPT,
+    KEY_FINDINGS_PROMPT,
     MAP_PROMPT,
     REDUCE_PROMPT,
     STYLE_INSTRUCTIONS,
@@ -39,6 +40,7 @@ class SummaryResult:
     technical: str
     simplified: str
     eli5: str
+    key_findings: str
     token_count: int
     chunks_used: int
 
@@ -67,6 +69,7 @@ class PaperSummarizer:
         self.technical_chain = self._create_chain(TECHNICAL_SUMMARY_PROMPT)
         self.simplified_chain = self._create_chain(SIMPLIFIED_SUMMARY_PROMPT)
         self.eli5_chain = self._create_chain(ELI5_SUMMARY_PROMPT)
+        self.key_findings_chain = self._create_chain(KEY_FINDINGS_PROMPT)
     
     def _create_chain(self, prompt_template: str):
         """Create a LangChain LCEL chain."""
@@ -129,15 +132,17 @@ class PaperSummarizer:
         """Direct summarization for shorter papers."""
         context = self._prepare_context(chunks)
         
-        # Generate all three summaries
+        # Generate all summaries including key findings
         technical = self.technical_chain.invoke({"context": context})
         simplified = self.simplified_chain.invoke({"context": context})
         eli5 = self.eli5_chain.invoke({"context": context})
+        key_findings = self.key_findings_chain.invoke({"context": context})
         
         return SummaryResult(
             technical=technical.strip(),
             simplified=simplified.strip(),
             eli5=eli5.strip(),
+            key_findings=key_findings.strip(),
             token_count=count_tokens(context),
             chunks_used=len(chunks),
         )
@@ -194,12 +199,19 @@ class PaperSummarizer:
             "style_instructions": STYLE_INSTRUCTIONS["eli5"],
         })
         
+        key_findings = reduce_chain.invoke({
+            "summaries": combined_summaries,
+            "summary_type": "KEY FINDINGS",
+            "style_instructions": "Extract key contributions, results, and limitations in bullet format.",
+        })
+        
         total_tokens = sum(count_tokens(c["content"]) for c in chunks)
         
         return SummaryResult(
             technical=technical.strip(),
             simplified=simplified.strip(),
             eli5=eli5.strip(),
+            key_findings=key_findings.strip(),
             token_count=total_tokens,
             chunks_used=len(chunks),
         )
