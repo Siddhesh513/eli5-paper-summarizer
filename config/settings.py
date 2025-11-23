@@ -6,31 +6,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# API Keys
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+# Groq API Key (FREE!)
+# Get yours at: https://console.groq.com/keys
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# LLM Provider: "openai", "groq", "google", "ollama"
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq")  # Default to free Groq
-
-# Model Configuration per provider
-LLM_MODELS = {
-    "openai": "gpt-4o-mini",
-    "groq": "llama-3.3-70b-versatile",  # Free, fast, high quality
-    "google": "gemini-1.5-flash",        # Free tier available
-    "ollama": "llama3.1",                # Local, fully free
-}
-LLM_MODEL = os.getenv("LLM_MODEL", LLM_MODELS.get(
-    LLM_PROVIDER, "llama-3.1-70b-versatile"))
-
-# Embedding Configuration
-# For free embeddings, use HuggingFace sentence-transformers (local)
-EMBEDDING_PROVIDER = os.getenv(
-    "EMBEDDING_PROVIDER", "huggingface")  # "openai" or "huggingface"
-EMBEDDING_MODEL = os.getenv(
-    "EMBEDDING_MODEL", "all-MiniLM-L6-v2")  # Free local model
+# LLM Configuration
+LLM_PROVIDER = "groq"
+LLM_MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
 
 # Chunking Configuration
 CHUNK_SIZE = 1500  # tokens

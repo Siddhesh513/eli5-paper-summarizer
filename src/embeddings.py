@@ -1,45 +1,21 @@
 """
 Embeddings and Vector Store Module.
 ChromaDB integration for semantic retrieval.
-Supports both OpenAI (paid) and HuggingFace (free) embeddings.
+Uses ChromaDB's default embeddings (no external dependencies).
 """
 import hashlib
 from typing import Optional
 
 import chromadb
 from chromadb.config import Settings
-from langchain_community.vectorstores import Chroma
 
-from config.settings import (
-    CHROMA_PERSIST_DIR, COLLECTION_NAME, EMBEDDING_MODEL, 
-    OPENAI_API_KEY, EMBEDDING_PROVIDER
-)
-
-
-def get_embeddings():
-    """
-    Get embeddings model based on configuration.
-    Returns HuggingFace (free) or OpenAI embeddings.
-    """
-    if EMBEDDING_PROVIDER == "openai" and OPENAI_API_KEY:
-        from langchain_openai import OpenAIEmbeddings
-        return OpenAIEmbeddings(
-            model=EMBEDDING_MODEL,
-            openai_api_key=OPENAI_API_KEY,
-        )
-    else:
-        # Free local embeddings using HuggingFace
-        from langchain_huggingface import HuggingFaceEmbeddings
-        return HuggingFaceEmbeddings(
-            model_name=EMBEDDING_MODEL,  # Default: "all-MiniLM-L6-v2"
-            model_kwargs={'device': 'cpu'},
-            encode_kwargs={'normalize_embeddings': True},
-        )
+from config.settings import CHROMA_PERSIST_DIR, COLLECTION_NAME
 
 
 class PaperVectorStore:
     """
     Vector store for paper chunks using ChromaDB.
+    Uses ChromaDB's built-in default embedding function.
     """
     
     def __init__(
@@ -56,8 +32,8 @@ class PaperVectorStore:
         """
         self.persist_dir = persist_dir
         self.collection_name = collection_name
-        self.embeddings = get_embeddings()
-        self._vectorstore: Optional[Chroma] = None
+        self.client = chromadb.Client()
+        self._collection = None
         self._current_paper_id: Optional[str] = None
     
     def _get_paper_id(self, title: str) -> str:
@@ -87,15 +63,26 @@ class PaperVectorStore:
         for meta in metadatas:
             meta["paper_id"] = paper_id
         
-        # Create new collection for this paper
+        # Create collection (ChromaDB uses default embedding)
         collection_name = f"{self.collection_name}_{paper_id}"
         
-        self._vectorstore = Chroma.from_texts(
-            texts=texts,
-            embedding=self.embeddings,
+        # Delete if exists
+        try:
+            self.client.delete_collection(collection_name)
+        except:
+            pass
+        
+        self._collection = self.client.create_collection(
+            name=collection_name,
+            metadata={"hnsw:space": "cosine"}
+        )
+        
+        # Add documents
+        ids = [f"chunk_{i}" for i in range(len(texts))]
+        self._collection.add(
+            documents=texts,
             metadatas=metadatas,
-            collection_name=collection_name,
-            persist_directory=self.persist_dir,
+            ids=ids
         )
         
         self._current_paper_id = paper_id
@@ -118,7 +105,7 @@ class PaperVectorStore:
         Returns:
             List of dicts with 'content' and 'metadata' keys
         """
-        if self._vectorstore is None:
+        if self._collection is None:
             raise ValueError("No paper embedded. Call embed_paper first.")
         
         # Build filter if section specified
@@ -126,53 +113,21 @@ class PaperVectorStore:
         if filter_section:
             where_filter = {"section": filter_section}
         
-        results = self._vectorstore.similarity_search(
-            query,
-            k=k,
-            filter=where_filter,
+        results = self._collection.query(
+            query_texts=[query],
+            n_results=k,
+            where=where_filter,
         )
         
-        return [
-            {
-                "content": doc.page_content,
-                "metadata": doc.metadata,
-            }
-            for doc in results
-        ]
-    
-    def retrieve_by_sections(
-        self,
-        queries: dict[str, str],
-        k_per_section: int = 2
-    ) -> list[dict]:
-        """
-        Retrieve chunks using section-specific queries.
+        chunks = []
+        if results and results['documents']:
+            for i, doc in enumerate(results['documents'][0]):
+                chunks.append({
+                    "content": doc,
+                    "metadata": results['metadatas'][0][i] if results['metadatas'] else {},
+                })
         
-        Args:
-            queries: Dict mapping section names to queries
-            k_per_section: Results per section
-        
-        Returns:
-            Combined list of relevant chunks
-        """
-        all_results = []
-        seen_contents = set()
-        
-        for section, query in queries.items():
-            results = self.retrieve(
-                query=query,
-                k=k_per_section,
-                filter_section=section,
-            )
-            
-            for result in results:
-                # Deduplicate
-                content_hash = hash(result["content"][:100])
-                if content_hash not in seen_contents:
-                    seen_contents.add(content_hash)
-                    all_results.append(result)
-        
-        return all_results
+        return chunks
     
     def get_all_chunks(self) -> list[dict]:
         """
@@ -181,26 +136,25 @@ class PaperVectorStore:
         Returns:
             List of all chunks with metadata
         """
-        if self._vectorstore is None:
+        if self._collection is None:
             raise ValueError("No paper embedded. Call embed_paper first.")
         
-        # Use a broad query to get all documents
-        results = self._vectorstore.similarity_search(
-            "paper content research study",
-            k=100,  # Get all chunks
-        )
+        # Get all documents
+        results = self._collection.get()
         
-        return [
-            {
-                "content": doc.page_content,
-                "metadata": doc.metadata,
-            }
-            for doc in results
-        ]
+        chunks = []
+        if results and results['documents']:
+            for i, doc in enumerate(results['documents']):
+                chunks.append({
+                    "content": doc,
+                    "metadata": results['metadatas'][i] if results['metadatas'] else {},
+                })
+        
+        return chunks
     
     def clear(self):
         """Clear the current vector store."""
-        self._vectorstore = None
+        self._collection = None
         self._current_paper_id = None
 
 
@@ -252,3 +206,5 @@ if __name__ == "__main__":
         print(f"  [{r['metadata']['section']}] {r['content'][:50]}...")
     
     print("\nVector store test complete!")
+    
+

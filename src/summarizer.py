@@ -1,7 +1,7 @@
 """
 Summarization Engine.
 LangChain-based summary generation with three detail levels.
-Supports OpenAI, Groq (free), Google Gemini (free), and Ollama (local).
+Uses Groq (free) by default.
 """
 from typing import Optional
 from dataclasses import dataclass
@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from config.settings import LLM_MODEL, LLM_PROVIDER, OPENAI_API_KEY, GROQ_API_KEY, GOOGLE_API_KEY, MAX_CHUNKS_FOR_DIRECT
+from config.settings import LLM_MODEL, LLM_PROVIDER, GROQ_API_KEY, MAX_CHUNKS_FOR_DIRECT
 from src.prompts import (
     TECHNICAL_SUMMARY_PROMPT,
     SIMPLIFIED_SUMMARY_PROMPT,
@@ -17,45 +17,20 @@ from src.prompts import (
     MAP_PROMPT,
     REDUCE_PROMPT,
     STYLE_INSTRUCTIONS,
-    SECTION_QUERIES,
 )
-from src.chunker import count_tokens, Chunk
+from src.chunker import count_tokens
 
 
 def get_llm(temperature: float = 0.3):
     """
-    Get LLM based on configuration.
-    Supports: openai, groq (free), google (free), ollama (local/free)
+    Get LLM - uses Groq (free) by default.
     """
-    if LLM_PROVIDER == "openai":
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
-            model=LLM_MODEL,
-            temperature=temperature,
-            openai_api_key=OPENAI_API_KEY,
-        )
-    elif LLM_PROVIDER == "groq":
-        from langchain_groq import ChatGroq
-        return ChatGroq(
-            model=LLM_MODEL,
-            temperature=temperature,
-            groq_api_key=GROQ_API_KEY,
-        )
-    elif LLM_PROVIDER == "google":
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(
-            model=LLM_MODEL,
-            temperature=temperature,
-            google_api_key=GOOGLE_API_KEY,
-        )
-    elif LLM_PROVIDER == "ollama":
-        from langchain_ollama import ChatOllama
-        return ChatOllama(
-            model=LLM_MODEL,
-            temperature=temperature,
-        )
-    else:
-        raise ValueError(f"Unknown LLM provider: {LLM_PROVIDER}")
+    from langchain_groq import ChatGroq
+    return ChatGroq(
+        model=LLM_MODEL,
+        temperature=temperature,
+        groq_api_key=GROQ_API_KEY,
+    )
 
 
 @dataclass

@@ -1,22 +1,23 @@
 # Core dependencies
-langchain>=0.1.0
-langchain-community>=0.0.10
-langchain-text-splitters>=0.0.1
+langchain>=0.2.0
+langchain-core>=0.2.0
 
-# LLM Providers
-langchain-groq>=0.1.0          # Groq (FREE - recommended!)
+# LLM Provider (FREE!)
+langchain-groq>=0.1.0
 
-# Embeddings
-langchain-huggingface>=0.0.3
-sentence-transformers>=2.2.0
-
-# Vector store
+# Vector store (uses built-in embeddings)
 chromadb>=0.4.0
 
 # PDF processing
 pymupdf>=1.23.0
 arxiv>=2.0.0
 
+# Web UI
+streamlit>=1.28.0
+
 # Utilities
 python-dotenv>=1.0.0
 tiktoken>=0.5.0
+
+# Testing
+pytest>=7.4.0
