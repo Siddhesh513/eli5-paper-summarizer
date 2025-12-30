@@ -38,3 +38,26 @@ ARXIV_PATTERNS = [
     r"arxiv\.org/pdf/(\d+\.\d+)",
     r"^(\d+\.\d+)$",  # Just the ID
 ]
+
+# Processing Mode Configuration
+TOKEN_BUDGETS = {
+    'quick': 500,      # Abstract only
+    'smart': 2500,     # Abstract + key sections
+    'deep': 12000      # Full paper
+}
+
+# Smart Mode Configuration
+SMART_MODE_CONFIG = {
+    'min_sections': 2,
+    'max_sections': 5,
+    'reserved_for_abstract': 300,
+    'section_similarity_threshold': 0.3,
+    'section_preview_words': 200,  # For embedding
+}
+
+# Embedding Model for Section Ranking
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+
+# Non-content sections to skip in Smart mode
+SKIP_SECTIONS = {"Abstract", "Preamble", "References", "Acknowledgments",
+                 "Acknowledgements", "Appendix", "Appendices", "Supplementary"}

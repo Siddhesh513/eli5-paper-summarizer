@@ -4,8 +4,9 @@ ELI5 Paper Summarizer - CLI Entry Point
 
 Usage:
     python main.py --url https://arxiv.org/abs/2301.00001
-    python main.py --url 2301.00001
-    python main.py --file paper.pdf
+    python main.py --url 2301.00001 --mode smart
+    python main.py --file paper.pdf --mode quick
+    python main.py --url 1706.03762 --mode deep --verbose
 """
 import argparse
 import sys
@@ -15,6 +16,7 @@ from src.pdf_processor import process_paper, extract_text_from_pdf, detect_secti
 from src.chunker import chunk_by_section, prepare_chunks_for_embedding, get_total_tokens
 from src.embeddings import create_retriever
 from src.summarizer import summarize_paper
+from src.smart_processor import SmartPaperProcessor, ProcessingConfig
 
 
 def main():
@@ -37,6 +39,13 @@ def main():
         choices=["all", "technical", "simplified", "eli5", "findings"],
         default="all",
         help="Summary level to generate (default: all)",
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["quick", "smart", "deep"],
+        default="smart",
+        help="Processing mode: quick (abstract only), smart (key sections), deep (full paper) (default: smart)"
     )
     parser.add_argument(
         "--chunking",
@@ -88,18 +97,34 @@ def main():
         print(f"✅ Title: {paper.title}")
         print(f"✅ Authors: {', '.join(paper.authors[:3]) if paper.authors else 'Unknown'}")
         print(f"✅ Sections found: {list(paper.sections.keys())}")
-        
-        # Step 2: Chunk the paper
+
+        # Display mode info if verbose
+        if args.verbose:
+            mode_info = {
+                "quick": "Abstract only (~500 tokens, ~10s)",
+                "smart": "Abstract + key sections (~2,500 tokens, ~30s) [RECOMMENDED]",
+                "deep": "Full paper (~12,000 tokens, ~2min)"
+            }
+            print(f"\n🎯 Mode: {args.mode.upper()} - {mode_info[args.mode]}")
+
+        # Step 2: Smart processing based on mode
         print("\n" + "="*60)
-        print(f" ✂️ Chunking Document ({args.chunking} strategy)")
+        print(f" ✂️ Smart Processing ({args.mode} mode, {args.chunking} strategy)")
         print("="*60)
-        
-        chunks = chunk_by_section(paper.sections, strategy=args.chunking)
+
+        config = ProcessingConfig(
+            mode=args.mode,
+            chunking_strategy=args.chunking
+        )
+        processor = SmartPaperProcessor(config)
+        chunks = processor.process(paper)
+
         texts, metadatas = prepare_chunks_for_embedding(chunks)
-        
+
         total_tokens = get_total_tokens(chunks)
         print(f"✅ Created {len(chunks)} chunks")
         print(f"✅ Total tokens: {total_tokens:,}")
+        print(f"✅ Processing mode: {args.mode.upper()}")
         
         if args.verbose:
             print("\nChunk breakdown:")

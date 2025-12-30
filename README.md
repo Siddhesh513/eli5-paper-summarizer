@@ -28,10 +28,40 @@ ELI5 Paper Summarizer generates **three distinct summary levels**:
 
 - 🔗 **arXiv Integration**: Paste any arXiv URL or paper ID
 - 📁 **PDF Upload**: Process any research paper PDF
+- 🎯 **Smart Processing Modes**: Choose speed vs. depth based on your needs
 - 🎨 **Web UI**: Beautiful Streamlit interface with tabs
 - 💻 **CLI Support**: Command-line interface for automation
 - 🆓 **100% Free**: Uses Groq's free Llama 3.1 70B API
 - 📊 **Progress Tracking**: Real-time status updates
+
+## 🎯 Processing Modes
+
+ELI5 Paper Summarizer offers three intelligent processing modes to balance speed and comprehensiveness:
+
+| Mode | Tokens | Time | Quality | Use Case |
+|------|--------|------|---------|----------|
+| ⚡ **Quick** | ~500 | ~10s | Overview | Fast preview of paper abstract |
+| 🎯 **Smart** | ~2,500 | ~30s | Balanced | **Recommended** - AI selects key sections |
+| 🔬 **Deep** | ~12,000 | ~2min | Comprehensive | Full detailed analysis |
+
+### How It Works
+
+- **Quick Mode**: Processes only the abstract for rapid summarization
+- **Smart Mode**: Uses AI embeddings to intelligently select the most relevant sections based on abstract content (Introduction, Results, Conclusion, etc.)
+- **Deep Mode**: Full RAG pipeline with complete paper analysis
+
+### CLI Usage with Modes
+
+```bash
+# Quick mode - abstract only
+python main.py --url 1706.03762 --mode quick
+
+# Smart mode (recommended) - intelligent section selection
+python main.py --url 1706.03762 --mode smart
+
+# Deep mode - full paper analysis
+python main.py --url 1706.03762 --mode deep --verbose
+```
 
 ## 🚀 Quick Start
 
@@ -72,9 +102,13 @@ streamlit run app.py
 
 **Command Line:**
 ```bash
+# Default (smart mode)
 python main.py --url 1706.03762
-python main.py --file paper.pdf
-python main.py --url 2301.00001 --level eli5
+
+# With specific mode
+python main.py --url 1706.03762 --mode quick
+python main.py --file paper.pdf --mode smart
+python main.py --url 2301.00001 --mode deep --level eli5
 ```
 
 ## 🏗️ Architecture

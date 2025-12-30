@@ -7,8 +7,10 @@ from src.summarizer import summarize_paper
 from src.embeddings import create_retriever
 from src.chunker import chunk_by_section, prepare_chunks_for_embedding, get_total_tokens
 from src.pdf_processor import process_paper, PaperContent, extract_text_from_pdf, detect_sections
+from src.smart_processor import SmartPaperProcessor, ProcessingConfig
 import streamlit as st
 import tempfile
+import time
 from pathlib import Path
 
 # Page config must be first Streamlit command
@@ -32,21 +34,30 @@ SAMPLE_PAPERS = {
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def process_complete_pipeline(arxiv_url: str, chunking_strategy: str):
+def process_complete_pipeline(arxiv_url: str, chunking_strategy: str, processing_mode: str = "smart"):
     """Cache the entire pipeline including summarization."""
+    start_time = time.time()
+
     # Step 1-2: Process paper
     paper = process_paper(arxiv_url)
 
-    # Step 3: Chunk
-    chunks = chunk_by_section(paper.sections, strategy=chunking_strategy)
-    texts, metadatas = prepare_chunks_for_embedding(chunks)
+    # Step 3: Smart chunking based on mode
+    config = ProcessingConfig(
+        mode=processing_mode,
+        chunking_strategy=chunking_strategy
+    )
+    processor = SmartPaperProcessor(config)
+    chunks = processor.process(paper)
 
     # Step 4: Embed
+    texts, metadatas = prepare_chunks_for_embedding(chunks)
     retriever = create_retriever(texts, metadatas, paper.title)
     all_chunks = retriever.get_all_chunks()
 
     # Step 5: Summarize
     result = summarize_paper(all_chunks)
+
+    processing_time = time.time() - start_time
 
     return {
         'paper_title': paper.title,
@@ -54,7 +65,9 @@ def process_complete_pipeline(arxiv_url: str, chunking_strategy: str):
         'sections': list(paper.sections.keys()),
         'total_tokens': get_total_tokens(chunks),
         'num_chunks': len(chunks),
-        'result': result
+        'result': result,
+        'processing_mode': processing_mode,
+        'processing_time': processing_time,
     }
 
 
@@ -87,10 +100,12 @@ def process_uploaded_pdf(uploaded_file) -> PaperContent:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def process_uploaded_pipeline(pdf_hash: str, pdf_bytes: bytes, chunking_strategy: str):
+def process_uploaded_pipeline(pdf_hash: str, pdf_bytes: bytes, chunking_strategy: str, processing_mode: str = "smart"):
     """Cache uploaded PDF processing based on file hash."""
     import tempfile
     from pathlib import Path
+
+    start_time = time.time()
 
     # Save to temp file
     temp_dir = tempfile.mkdtemp()
@@ -108,8 +123,24 @@ def process_uploaded_pipeline(pdf_hash: str, pdf_bytes: bytes, chunking_strategy
     title = next((l.strip()
                  for l in lines if len(l.strip()) > 10), "Uploaded Paper")
 
-    # Chunk
-    chunks = chunk_by_section(sections, strategy=chunking_strategy)
+    # Create paper content object
+    paper = PaperContent(
+        title=title,
+        authors=[],
+        abstract=sections.get("Abstract", ""),
+        full_text=full_text,
+        sections=sections,
+        pdf_path=str(temp_path)
+    )
+
+    # Smart chunking based on mode
+    config = ProcessingConfig(
+        mode=processing_mode,
+        chunking_strategy=chunking_strategy
+    )
+    processor = SmartPaperProcessor(config)
+    chunks = processor.process(paper)
+
     texts, metadatas = prepare_chunks_for_embedding(chunks)
 
     # Embed
@@ -119,13 +150,17 @@ def process_uploaded_pipeline(pdf_hash: str, pdf_bytes: bytes, chunking_strategy
     # Summarize
     result = summarize_paper(all_chunks)
 
+    processing_time = time.time() - start_time
+
     return {
         'paper_title': title,
         'authors': [],
         'sections': list(sections.keys()),
         'total_tokens': get_total_tokens(chunks),
         'num_chunks': len(chunks),
-        'result': result
+        'result': result,
+        'processing_mode': processing_mode,
+        'processing_time': processing_time,
     }
 
 
@@ -140,6 +175,31 @@ def main():
     # Sidebar
     with st.sidebar:
         st.header("⚙️ Settings")
+
+        # Processing mode selector
+        st.subheader("🎯 Processing Mode")
+        processing_mode = st.selectbox(
+            "Select processing depth:",
+            options=["smart", "quick", "deep"],
+            format_func=lambda x: {
+                "quick": "⚡ Quick (Abstract Only)",
+                "smart": "🎯 Smart (Balanced) ⭐",
+                "deep": "🔬 Deep (Full Paper)"
+            }[x],
+            index=0,
+            help="Quick: Fastest, abstract only\nSmart: Recommended, key sections\nDeep: Most comprehensive"
+        )
+
+        # Show mode info
+        mode_info = {
+            "quick": {"tokens": "~500", "time": "~10s", "quality": "Overview"},
+            "smart": {"tokens": "~2,500", "time": "~30s", "quality": "Balanced"},
+            "deep": {"tokens": "~12,000", "time": "~2min", "quality": "Comprehensive"}
+        }
+        info = mode_info[processing_mode]
+        st.info(f"📊 {info['tokens']} tokens • ⏱️ {info['time']} • 🎯 {info['quality']}")
+
+        st.divider()
 
         # Chunking strategy selector
         st.subheader("🔧 Chunking Strategy")
@@ -234,7 +294,7 @@ def main():
             if arxiv_url:
                 # Use cached complete pipeline
                 cached_result = process_complete_pipeline(
-                    arxiv_url, chunking_strategy)
+                    arxiv_url, chunking_strategy, processing_mode)
 
                 # Display paper info
                 st.success(f"**{cached_result['paper_title']}** ✨")
@@ -242,11 +302,13 @@ def main():
                     st.caption(
                         f"Authors: {', '.join(cached_result['authors'][:5])}{'...' if len(cached_result['authors']) > 5 else ''}")
 
-                # Show stats
+                # Show processing stats
                 col1, col2, col3 = st.columns(3)
-                col1.metric("Chunks", cached_result['num_chunks'])
-                col2.metric("Tokens", f"{cached_result['total_tokens']:,}")
-                col3.metric("Sections", len(cached_result['sections']))
+                col1.metric("Tokens Used", f"{cached_result['total_tokens']:,}")
+                col2.metric("Processing Time", f"{cached_result['processing_time']:.1f}s")
+                col3.metric("Mode", cached_result['processing_mode'].upper())
+
+                st.caption(f"📦 {cached_result['num_chunks']} chunks • 📂 {len(cached_result['sections'])} sections")
 
                 progress.progress(100, text="✅ Complete!")
 
@@ -260,14 +322,17 @@ def main():
                 pdf_hash = hashlib.md5(pdf_bytes).hexdigest()
 
                 cached_result = process_uploaded_pipeline(
-                    pdf_hash, pdf_bytes, chunking_strategy)
+                    pdf_hash, pdf_bytes, chunking_strategy, processing_mode)
 
                 st.success(f"**{cached_result['paper_title']}** ✨")
 
+                # Show processing stats
                 col1, col2, col3 = st.columns(3)
-                col1.metric("Chunks", cached_result['num_chunks'])
-                col2.metric("Tokens", f"{cached_result['total_tokens']:,}")
-                col3.metric("Sections", len(cached_result['sections']))
+                col1.metric("Tokens Used", f"{cached_result['total_tokens']:,}")
+                col2.metric("Processing Time", f"{cached_result['processing_time']:.1f}s")
+                col3.metric("Mode", cached_result['processing_mode'].upper())
+
+                st.caption(f"📦 {cached_result['num_chunks']} chunks • 📂 {len(cached_result['sections'])} sections")
 
                 progress.progress(100, text="✅ Complete!")
 
